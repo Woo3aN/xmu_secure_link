@@ -56,8 +56,24 @@ fn main() {
         .define("VCPKG_TARGET_TRIPLET", &triplet);
     let dst = cfg.build();
 
-    println!("cargo:rustc-link-search=native={}", dst.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dst.join("lib").display()
+    );
     println!("cargo:rustc-link-lib=dylib=ovpnffi");
+
+    // arm64 Linux 特判：补上 libovpnffi.so 依赖但没有传递出来的 jsoncpp/C++ runtime。
+    if target_os == "linux" && target_arch == "aarch64" {
+        let vcpkg_lib_dir = vcpkg_root.join("installed").join(&triplet).join("lib");
+
+        println!("cargo:rustc-link-search=native={}", vcpkg_lib_dir.display());
+
+        // jsoncpp provides Json::Value / Json::StreamWriterBuilder symbols.
+        println!("cargo:rustc-link-arg=-Wl,--no-as-needed");
+        println!("cargo:rustc-link-lib=dylib=jsoncpp");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+        println!("cargo:rustc-link-arg=-Wl,--as-needed");
+    }
 
     // Let the binary find the staged shared libraries via a relative rpath.
     match target_os.as_str() {
@@ -75,7 +91,8 @@ fn embed_uac_manifest() {
     use embed_manifest::{embed_manifest, new_manifest};
 
     embed_manifest(
-        new_manifest("XMU.SecureLink").requested_execution_level(ExecutionLevel::RequireAdministrator),
+        new_manifest("XMU.SecureLink")
+            .requested_execution_level(ExecutionLevel::RequireAdministrator),
     )
     .expect("failed to embed UAC manifest");
 }
@@ -117,7 +134,9 @@ fn stage_runtime_libs(install_dir: &Path, vcpkg_root: &Path, triplet: &str, targ
 
     let mut seen = HashSet::new();
     for lib in libs {
-        let Some(name) = lib.file_name() else { continue };
+        let Some(name) = lib.file_name() else {
+            continue;
+        };
         if !seen.insert(name.to_owned()) {
             continue;
         }
