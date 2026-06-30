@@ -1,0 +1,99 @@
+name: build
+
+on:
+  push:
+    branches: ["master", "main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["master", "main"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0). Leave empty to only build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write # needed to publish a release
+
+jobs:
+  build:
+    name: Build (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg\installed
+            C:\vcpkg\downloads
+          key: vcpkg-x64-windows-${{ hashFiles('vendor/openvpn3/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-x64-windows-
+
+      - name: Install OpenVPN3 native dependencies (vcpkg)
+        shell: pwsh
+        run: |
+          vcpkg install asio fmt jsoncpp lz4 openssl tap-windows6 xxhash pkgconf --triplet x64-windows
+
+      - name: Build (release)
+        shell: pwsh
+        run: cargo build --release --target $env:TARGET
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $rel = "target/$env:TARGET/release"
+          $name = "xmu_secure_link-$env:TARGET"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $files = @("$rel/xmu_secure_link.exe") + (Get-ChildItem "$rel/*.dll").FullName
+          Compress-Archive -Path $files -DestinationPath "dist/$name.zip" -Force
+          "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+      # Release only when a tag is provided — either a pushed git tag (refs/tags/*)
+      # or a tag typed into the manual workflow_dispatch input. Otherwise just build.
+      - name: Resolve release tag
+        id: rel
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release
+        if: steps.rel.outputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.rel.outputs.tag }}
+          name: ${{ steps.rel.outputs.tag }}
+          files: dist/*.zip
+          generate_release_notes: true
