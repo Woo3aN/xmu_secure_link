@@ -94,9 +94,38 @@ jobs:
                   fi
                   vcpkg install $pkgs --triplet ${{ matrix.triplet }}
 
+            - name: Diagnose OpenSSL libs
+              if: runner.os == 'Linux'
+              shell: bash
+              run: |
+                  VCPKG_LIB="$VCPKG_ROOT/installed/${{ matrix.triplet }}/lib"
+                  echo "VCPKG_LIB=$VCPKG_LIB"
+                  ls -lah "$VCPKG_LIB" | grep -E 'ssl|crypto|jsoncpp' || true
+                  file "$VCPKG_LIB"/libssl.so* || true
+                  file "$VCPKG_LIB"/libcrypto.so* || true
+                  readelf -Ws "$VCPKG_LIB"/libssl.so | grep SSL_get0_group_name || true
+                  readelf -Ws "$VCPKG_LIB"/libcrypto.so | grep EVP_MD_CTX_get_size_ex || true
+                  openssl version || true
+
             - name: Build (release)
               shell: bash
-              run: cargo build --release --target ${{ matrix.target }}
+              run: |
+                  if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+                      export VCPKG_LIB="$VCPKG_ROOT/installed/${{ matrix.triplet }}/lib"
+
+                      export LIBRARY_PATH="$VCPKG_LIB:$LIBRARY_PATH"
+                      export LD_LIBRARY_PATH="$VCPKG_LIB:$LD_LIBRARY_PATH"
+
+                      export RUSTFLAGS="-L native=$VCPKG_LIB \
+                      -C link-arg=-Wl,-rpath-link,$VCPKG_LIB \
+                      -C link-arg=-Wl,--no-as-needed \
+                      -C link-arg=-ljsoncpp \
+                      -C link-arg=-lssl \
+                      -C link-arg=-lcrypto \
+                      -C link-arg=-lstdc++ \
+                      -C link-arg=-Wl,--as-needed"
+                  fi
+                    cargo build --release --target ${{ matrix.target }}
 
             - name: Package
               id: package
