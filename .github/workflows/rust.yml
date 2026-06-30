@@ -1,4 +1,4 @@
-name: build
+name: build and publish
 
 on:
   push:
@@ -18,67 +18,125 @@ permissions:
 
 jobs:
   build:
-    name: Build (x86_64-pc-windows-msvc)
-    runs-on: windows-latest
-    env:
-      VCPKG_ROOT: C:\vcpkg
-      TARGET: x86_64-pc-windows-msvc
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            triplet: x64-linux-dynamic
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            triplet: arm64-linux-dynamic
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            triplet: x64-windows
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            triplet: arm64-windows
+          - target: x86_64-apple-darwin
+            os: macos-13
+            triplet: x64-osx
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            triplet: arm64-osx
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Ninja
+      - name: Point VCPKG_ROOT at the runner's vcpkg
+        shell: bash
+        run: echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkg-config
+
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows'
         run: choco install ninja -y
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
           path: |
-            C:\vcpkg\installed
-            C:\vcpkg\downloads
-          key: vcpkg-x64-windows-${{ hashFiles('vendor/openvpn3/vcpkg.json') }}
+            ${{ env.VCPKG_ROOT }}/installed
+            ${{ env.VCPKG_ROOT }}/downloads
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vendor/openvpn3/vcpkg.json') }}
           restore-keys: |
-            vcpkg-x64-windows-
+            vcpkg-${{ matrix.triplet }}-
 
       - name: Install OpenVPN3 native dependencies (vcpkg)
-        shell: pwsh
+        shell: bash
         run: |
-          vcpkg install asio fmt jsoncpp lz4 openssl tap-windows6 xxhash pkgconf --triplet x64-windows
+          pkgs="asio fmt jsoncpp lz4 openssl xxhash pkgconf"
+          # tap-windows6 is a Windows-only port (TAP/DCO driver headers).
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            pkgs="$pkgs tap-windows6"
+          fi
+          vcpkg install $pkgs --triplet ${{ matrix.triplet }}
 
       - name: Build (release)
-        shell: pwsh
-        run: cargo build --release --target $env:TARGET
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package
         id: package
-        shell: pwsh
+        shell: bash
         run: |
-          $rel = "target/$env:TARGET/release"
-          $name = "xmu_secure_link-$env:TARGET"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $files = @("$rel/xmu_secure_link.exe") + (Get-ChildItem "$rel/*.dll").FullName
-          Compress-Archive -Path $files -DestinationPath "dist/$name.zip" -Force
-          "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          name="xmu_secure_link-${{ matrix.target }}"
+          reldir="target/${{ matrix.target }}/release"
+          mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ( cd "$reldir" && 7z a "$GITHUB_WORKSPACE/dist/$name.zip" xmu_secure_link.exe *.dll )
+          else
+            files="xmu_secure_link"
+            for f in "$reldir"/*.so "$reldir"/*.so.* "$reldir"/*.dylib; do
+              [ -e "$f" ] && files="$files $(basename "$f")"
+            done
+            tar -C "$reldir" -czf "dist/$name.tar.gz" $files
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.name }}
-          path: dist/*.zip
+          path: dist/*
           if-no-files-found: error
 
-      # Release only when a tag is provided — either a pushed git tag (refs/tags/*)
-      # or a tag typed into the manual workflow_dispatch input. Otherwise just build.
+  # Publish a GitHub release only when a tag is provided — either a pushed git
+  # tag (refs/tags/v*) or a tag typed into the manual workflow_dispatch input.
+  # Otherwise the workflow just builds and leaves the artifacts attached.
+  release:
+    needs: build
+    if: always() && (github.ref_type == 'tag' || github.event.inputs.tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Resolve release tag
         id: rel
         shell: bash
@@ -90,10 +148,9 @@ jobs:
           fi
 
       - name: Publish release
-        if: steps.rel.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.rel.outputs.tag }}
           name: ${{ steps.rel.outputs.tag }}
-          files: dist/*.zip
+          files: dist/**/*
           generate_release_notes: true
