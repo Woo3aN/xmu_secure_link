@@ -1,9 +1,10 @@
 > **这是 [XMU-MoYu-Club/xmu_secure_link](https://github.com/XMU-MoYu-Club/xmu_secure_link) 的个人 fork。**
 >
-> 在原版基础上修了一个影响非校园网使用的问题：服务端通过 `dhcp-option DNS` 下发的 DNS 服务器
-> 没有被加入 split-tunnel 路由，导致校外连接后所有域名解析都要等约 12 秒超时，网页全部打不开。
-> 本 fork 把推送的 DNS 地址一并安装为隧道的 `/32` 主机路由（`src/main.rs`，含 5 个单元测试）。
-> **该修复只适用于 Windows**；Linux / macOS 的分流路由本身尚未实现，详见下方「平台支持情况」。
+> 项目的主体工作（协议实现、OpenVPN3 集成、分流路由、构建与发布）都来自原作者，本 fork 只修了一个问题：
+> 服务端通过 `dhcp-option DNS` 下发的 DNS 服务器没有被加入 split-tunnel 路由，导致校外连接后
+> 所有域名解析都要等约 12 秒超时、网页全部打不开。修复方式是把这些 DNS 地址一并安装为隧道的
+> `/32` 主机路由（`src/main.rs`，含 5 个单元测试）。
+> **该修复只适用于 Windows**；Linux / macOS 的分流路由尚未实现，详见下方「平台支持情况」。
 >
 > 上游 issue：[#1](https://github.com/XMU-MoYu-Club/xmu_secure_link/issues/1) ·
 > 对应 PR：[#3](https://github.com/XMU-MoYu-Club/xmu_secure_link/pull/3)
@@ -122,6 +123,16 @@ docs/        分流路由原理与借鉴指南
 
 ---
 
+## ⚠️ 免责声明
+
+- 本项目为第三方实现，**与厦门大学及 SecureLink 官方无关**，不提供任何形式的担保。
+- 请使用**本人账号**登录，并遵守学校校园网 / VPN 的使用规定：账号不得转借他人、不得用于违规用途。
+- 使用本工具产生的一切后果由使用者自行承担，作者与本 fork 维护者不承担责任。
+- 仅供个人学习与便利使用。
+
 ## 📄 许可证
 
 [GNU General Public License v3.0](LICENSE)。`vendor/openvpn3` 遵循其自身许可证。
+
+Windows 完整版分发包内附带 tap-windows6 驱动（© OpenVPN 项目，GPL-2.0 / MIT 双许可），
+许可文本随包放在 `tapdriver/COPYING`、`tapdriver/COPYRIGHT.GPL` 与 `tapdriver/COPYRIGHT.MIT`。
