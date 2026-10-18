@@ -70,7 +70,13 @@ async fn main() -> Result<()> {
             msg = rx.recv() => match msg {
                 Some(ovpn3::Msg::Log(line)) => {
                     for physical in line.split('\n') {
-                        if let Some(cidr) = parse_app_route(physical) {
+                        // Both the ACL destinations and the pushed DNS servers must
+                        // be reachable through the tunnel: the resolver is pointed
+                        // at them, so a missing DNS route sends every lookup to the
+                        // default gateway (times out off-campus).
+                        if let Some(cidr) =
+                            parse_app_route(physical).or_else(|| parse_dns_server(physical))
+                        {
                             app_routes.push(cidr);
                         }
                     }
@@ -158,6 +164,28 @@ fn parse_app_route(line: &str) -> Option<String> {
     let (ip, _prefix) = cidr.split_once('/')?;
     if ip.split('.').count() == 4 && ip.split('.').all(|o| o.parse::<u8>().is_ok()) {
         Some(cidr.to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract a pushed DNS server from a `dhcp-option DNS` log line, e.g.
+/// `0 [dhcp-option] [DNS] [210.34.0.18]` -> `210.34.0.18/32`.
+///
+/// SecureLink's DNS servers live inside the intranet, and OpenVPN3 points the
+/// OS resolver at them. The split-tunnel route set only covered the `app` ACL,
+/// so off-campus every lookup left through the default gateway and timed out.
+/// Returning them as /32 destinations gives them a tunnel route, and they are
+/// torn down together with the ACL routes on exit.
+fn parse_dns_server(line: &str) -> Option<String> {
+    if !line.contains("[dhcp-option]") {
+        return None;
+    }
+    let idx = line.find("[DNS]")?;
+    let rest = line[idx + "[DNS]".len()..].trim_start();
+    let ip = rest.strip_prefix('[')?.split(']').next()?.trim();
+    if ip.split('.').count() == 4 && ip.split('.').all(|o| o.parse::<u8>().is_ok()) {
+        Some(format!("{ip}/32"))
     } else {
         None
     }
