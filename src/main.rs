@@ -485,3 +485,61 @@ unsafe extern "C" {
     #[link_name = "getuid"]
     fn libc_getuid() -> u32;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_dns_server_accepts_pushed_dns() {
+        assert_eq!(
+            parse_dns_server("0 [dhcp-option] [DNS] [210.34.0.18]").as_deref(),
+            Some("210.34.0.18/32")
+        );
+        assert_eq!(
+            parse_dns_server("1 [dhcp-option] [DNS] [210.34.0.14]").as_deref(),
+            Some("210.34.0.14/32")
+        );
+    }
+
+    #[test]
+    fn parse_dns_server_ignores_unrelated_lines() {
+        // ACL / topology / domain / ctrl lines must not be picked up here
+        assert_eq!(
+            parse_dns_server("129 [app] [[addr:121.192.180.236/32][proto:any] [port:21]]"),
+            None
+        );
+        assert_eq!(parse_dns_server("3 [topology] [subnet]"), None);
+        assert_eq!(parse_dns_server("0 [dhcp-option] [DOMAIN] [xmu.edu.cn]"), None);
+        assert_eq!(
+            parse_dns_server("183 [ctrl] [[domain:xk.xmu.edu.cn][sourceIp:219.229.81.200]]"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_dns_server_rejects_invalid_addresses() {
+        assert_eq!(parse_dns_server("0 [dhcp-option] [DNS] [abc.def]"), None);
+        assert_eq!(parse_dns_server("0 [dhcp-option] [DNS]"), None);
+        assert_eq!(parse_dns_server("0 [dhcp-option] [DNS] [1.2.3]"), None);
+        assert_eq!(parse_dns_server("0 [dhcp-option] [DNS] [999.1.1.1]"), None);
+        assert_eq!(parse_dns_server(""), None);
+    }
+
+    #[test]
+    fn parse_dns_server_accepts_public_resolver_known_tradeoff() {
+        // Documented trade-off: a public resolver is also routed through the
+        // tunnel. Current SecureLink only pushes intranet resolvers.
+        assert_eq!(
+            parse_dns_server("0 [dhcp-option] [DNS] [8.8.8.8]").as_deref(),
+            Some("8.8.8.8/32")
+        );
+    }
+
+    #[test]
+    fn acl_lines_still_go_through_parse_app_route() {
+        let acl = "129 [app] [[addr:121.192.180.236/32][proto:any] [port:21]]";
+        assert_eq!(parse_app_route(acl).as_deref(), Some("121.192.180.236/32"));
+        assert_eq!(parse_dns_server(acl), None);
+    }
+}
