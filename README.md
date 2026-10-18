@@ -1,3 +1,16 @@
+> **这是 [XMU-MoYu-Club/xmu_secure_link](https://github.com/XMU-MoYu-Club/xmu_secure_link) 的个人 fork。**
+>
+> 在原版基础上修了一个影响非校园网使用的问题：服务端通过 `dhcp-option DNS` 下发的 DNS 服务器
+> 没有被加入 split-tunnel 路由，导致校外连接后所有域名解析都要等约 12 秒超时，网页全部打不开。
+> 本 fork 把推送的 DNS 地址一并安装为隧道的 `/32` 主机路由（`src/main.rs`，含 5 个单元测试）。
+>
+> 上游 issue：[#1](https://github.com/XMU-MoYu-Club/xmu_secure_link/issues/1) ·
+> 对应 PR：[#3](https://github.com/XMU-MoYu-Club/xmu_secure_link/pull/3)
+>
+> 如果上游已经合并了该修复，请优先使用上游版本。
+
+---
+
 # xmu_secure_link
 
 厦门大学 SecureLink（svpnlink.xmu.edu.cn）的第三方命令行 VPN 客户端，用 **Rust** 编写。把 **OpenVPN3 核心从源码编译**进来作为进程内库（FFI），交互方式对齐官方客户端：浏览器登录 → 粘贴回调 URL → 自动连接并按服务器下发的清单分流。
