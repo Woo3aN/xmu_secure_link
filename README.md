@@ -17,6 +17,18 @@
 
 单一可执行文件，数据面是编译进来的 OpenVPN3，无需外部 `openvpn.exe`。
 
+## 下载（Windows）
+
+到 [Releases](https://github.com/Woo3aN/xmu_secure_link/releases) 页面按需选择：
+
+| 文件 | 适用场景 |
+|---|---|
+| **`xmu_secure_link-windows-x64-full.zip`** | **推荐**。主程序 + 一键启动器 + TAP 网卡驱动 + 修复工具。解压后双击 `xmu_vpn.exe`，会自动安装网卡、连接后补 DNS 路由、异常退出时清理；不需要安装 Python |
+| `xmu_secure_link-x86_64-pc-windows-msvc.zip` | 只含主程序（exe + dll）。系统里已有 TAP-Windows 网卡（装过官方 SecureLink / OpenVPN）时可用 |
+| `xmu_secure_link-aarch64-pc-windows-msvc.zip` | ARM 版 Windows（如骁龙笔记本），同样只含主程序 |
+
+完整版解压后先看 `使用说明.txt`；如果遇到「网页打不开 / 很卡」，双击 `网络修复.cmd` 即可恢复。
+
 ---
 
 ## ✨ 特性
