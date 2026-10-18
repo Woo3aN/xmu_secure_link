@@ -3,6 +3,7 @@
 > 在原版基础上修了一个影响非校园网使用的问题：服务端通过 `dhcp-option DNS` 下发的 DNS 服务器
 > 没有被加入 split-tunnel 路由，导致校外连接后所有域名解析都要等约 12 秒超时，网页全部打不开。
 > 本 fork 把推送的 DNS 地址一并安装为隧道的 `/32` 主机路由（`src/main.rs`，含 5 个单元测试）。
+> **该修复只适用于 Windows**；Linux / macOS 的分流路由本身尚未实现，详见下方「平台支持情况」。
 >
 > 上游 issue：[#1](https://github.com/XMU-MoYu-Club/xmu_secure_link/issues/1) ·
 > 对应 PR：[#3](https://github.com/XMU-MoYu-Club/xmu_secure_link/pull/3)
@@ -28,6 +29,19 @@
 | `xmu_secure_link-aarch64-pc-windows-msvc.zip` | ARM 版 Windows（如骁龙笔记本），同样只含主程序 |
 
 完整版解压后先看 `使用说明.txt`；如果遇到「网页打不开 / 很卡」，双击 `网络修复.cmd` 即可恢复。
+
+## 平台支持情况
+
+| 平台 | 主程序 | 分流路由 | DNS 修复 |
+|---|---|---|---|
+| Windows | ✅ | ✅ `netsh` 安装与退出清理 | ✅ 本 fork |
+| Linux | ✅ 可建立隧道 | ❌ 未实现（源码中为 no-op） | ❌ |
+| macOS | ✅ 可建立隧道 | ❌ 未实现（源码中为 no-op） | ❌ |
+
+Linux / macOS 上 `install_app_routes` 目前是空实现（见 `src/main.rs` 的 `cfg(all(unix, ...))` 分支），
+所以只能建立隧道、不会把校园网目标引流进去，访问校内资源需要手动 `ip route` / `route add`；
+本 fork 的 DNS 修复也只覆盖 Windows（`netsh` 分支）。对应上游 PR
+[#3](https://github.com/XMU-MoYu-Club/xmu_secure_link/pull/3) 同样只针对 Windows 行为。
 
 ---
 
